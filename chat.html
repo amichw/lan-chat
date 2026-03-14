@@ -96,11 +96,30 @@
     padding: 0;
   }
 
-  /* ---- Host QR / Answer QR ---- */
-  #section-host-qr, #section-answer-qr {
+  /* ---- Host QR ---- */
+  #section-host-qr {
+    align-items: center;
+    justify-content: flex-start;
+    gap: 16px;
+    padding: 24px 24px 32px;
+    text-align: center;
+    overflow-y: auto;
+  }
+
+  /* ---- Answer QR ---- */
+  #section-answer-qr {
     align-items: center;
     justify-content: center;
     gap: 20px;
+    padding: 32px 24px;
+    text-align: center;
+  }
+
+  /* ---- Show Answer Code (file-based joiner) ---- */
+  #section-show-answer {
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
     padding: 32px 24px;
     text-align: center;
   }
@@ -427,6 +446,81 @@
     font-size: 0.75rem;
     text-decoration: none;
   }
+
+  /* Code textarea (answer code display) */
+  .code-textarea {
+    width: 100%;
+    max-width: 320px;
+    height: 110px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    color: #aaa;
+    font-size: 0.68rem;
+    font-family: monospace;
+    padding: 12px;
+    resize: none;
+    outline: none;
+    line-height: 1.5;
+    word-break: break-all;
+  }
+
+  /* Paste answer area on host screen */
+  .paste-area {
+    width: 100%;
+    max-width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    text-align: left;
+  }
+
+  .paste-area label {
+    font-size: 0.8rem;
+    color: #888;
+  }
+
+  .paste-input {
+    width: 100%;
+    height: 72px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    color: #e8e8e8;
+    font-size: 0.7rem;
+    font-family: monospace;
+    padding: 10px 12px;
+    resize: none;
+    outline: none;
+    word-break: break-all;
+  }
+
+  .paste-input:focus { border-color: #4f8ef7; }
+
+  .paste-error {
+    color: #e74c3c;
+    font-size: 0.75rem;
+    display: none;
+  }
+
+  .paste-error.visible { display: block; }
+
+  .section-divider {
+    width: 100%;
+    max-width: 320px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #444;
+    font-size: 0.75rem;
+  }
+
+  .section-divider::before, .section-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #2a2a2a;
+  }
 </style>
 </head>
 <body>
@@ -456,8 +550,13 @@
   </button>
   <button class="btn btn-secondary" onclick="startJoiner()">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-    Join Session
+    Join via QR Scan
   </button>
+  <button class="btn btn-secondary" onclick="document.getElementById('invite-file-input').click()">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+    Open Invite File
+  </button>
+  <input type="file" id="invite-file-input" accept=".json" style="display:none" onchange="openInviteFile(this.files[0])">
   <button class="change-name-link" onclick="changeName()">Change display name</button>
 </div>
 
@@ -470,7 +569,18 @@
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
     Scan Answer QR
   </button>
+  <button class="btn btn-secondary" id="btn-download-invite" onclick="downloadInviteFile()" style="display:none">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Download Invite File
+  </button>
   <p class="qr-subtitle" id="host-status-text">Generating offer…</p>
+  <div class="section-divider" id="paste-divider" style="display:none">or paste answer code</div>
+  <div class="paste-area" id="paste-answer-area" style="display:none">
+    <label>Answer code from joiner:</label>
+    <textarea class="paste-input" id="paste-answer-textarea" placeholder="Z:eJy…" spellcheck="false"></textarea>
+    <span class="paste-error" id="paste-error">Invalid answer code. Please try again.</span>
+    <button class="btn btn-primary btn-sm" onclick="applyPastedAnswer()">Connect</button>
+  </div>
   <button class="btn btn-secondary btn-sm" onclick="goLanding()">Cancel</button>
 </div>
 
@@ -491,6 +601,19 @@
   <p class="qr-subtitle">Have the host scan this code to complete the connection</p>
   <div id="qr-answer-container"><div class="spinner"></div></div>
   <p class="qr-subtitle" id="answer-status-text">Generating answer…</p>
+  <button class="btn btn-secondary btn-sm" onclick="goLanding()">Cancel</button>
+</div>
+
+<!-- SHOW ANSWER CODE (file-based joiner) -->
+<div id="section-show-answer" class="section">
+  <div class="qr-title">Send This to the Host</div>
+  <p class="qr-subtitle">Copy the code below and send it to the host via any channel (message, email, etc.)</p>
+  <textarea id="answer-code-textarea" class="code-textarea" readonly placeholder="Generating…" spellcheck="false"></textarea>
+  <button class="btn btn-primary" id="copy-answer-btn" onclick="copyAnswerCode()">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+    Copy to Clipboard
+  </button>
+  <p class="qr-subtitle" id="show-answer-status">Waiting for host to connect…</p>
   <button class="btn btn-secondary btn-sm" onclick="goLanding()">Cancel</button>
 </div>
 
@@ -629,6 +752,11 @@ async function startHost() {
   showSection('section-host-qr');
   document.getElementById('host-status-text').textContent = 'Generating offer…';
   document.getElementById('btn-scan-answer').style.display = 'none';
+  document.getElementById('btn-download-invite').style.display = 'none';
+  document.getElementById('paste-divider').style.display = 'none';
+  document.getElementById('paste-answer-area').style.display = 'none';
+  document.getElementById('paste-error').classList.remove('visible');
+  document.getElementById('paste-answer-textarea').value = '';
   document.getElementById('qr-offer-container').innerHTML = '<div class="spinner"></div>';
 
   createPeerConnection();
@@ -652,8 +780,11 @@ async function startHost() {
 
   const compressed = compressPayload(payload);
   renderQR('qr-offer-container', compressed);
-  document.getElementById('host-status-text').textContent = 'Waiting for peer to scan…';
+  document.getElementById('host-status-text').textContent = 'Waiting for peer…';
   document.getElementById('btn-scan-answer').style.display = 'flex';
+  document.getElementById('btn-download-invite').style.display = 'flex';
+  document.getElementById('paste-divider').style.display = 'flex';
+  document.getElementById('paste-answer-area').style.display = 'flex';
 }
 
 function openCameraForAnswer() {
@@ -1055,6 +1186,128 @@ function onQRScanned(data) {
     showSection('section-host-qr');
     document.getElementById('host-status-text').textContent = 'Connecting…';
     handleScannedAnswer(data);
+  }
+}
+
+// ============================================================
+// FILE-BASED CONNECTION
+// ============================================================
+
+function downloadInviteFile() {
+  if (!pc || !pc.localDescription) return;
+  const payload = JSON.stringify({
+    offer: pc.localDescription,
+    device_id: identity.device_id,
+    username: identity.username
+  });
+  const invite = {
+    v: 1,
+    offer: compressPayload(payload),
+    device_id: identity.device_id,
+    username: identity.username,
+    created_at: Date.now()
+  };
+  const blob = new Blob([JSON.stringify(invite)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'p2p-invite-' + (identity.username || 'session').replace(/\s+/g, '-') + '.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+async function openInviteFile(file) {
+  if (!file) return;
+  document.getElementById('invite-file-input').value = '';
+
+  let data;
+  try {
+    const text = await file.text();
+    data = JSON.parse(text);
+    if (data.v !== 1 || !data.offer) throw new Error('bad format');
+  } catch(e) {
+    alert('Invalid invite file. Make sure you opened a p2p-invite-*.json file.');
+    return;
+  }
+
+  peerName = data.username || 'Host';
+  createPeerConnection();
+  pc.ondatachannel = (e) => {
+    dc = e.channel;
+    setupDataChannel();
+  };
+
+  let parsed;
+  try {
+    parsed = JSON.parse(decompressPayload(data.offer));
+    await pc.setRemoteDescription(new RTCSessionDescription(parsed.offer));
+  } catch(e) {
+    alert('Failed to read invite offer: ' + e.message);
+    cleanup();
+    return;
+  }
+
+  // Show answer code screen while generating
+  showSection('section-show-answer');
+  document.getElementById('answer-code-textarea').value = '';
+  document.getElementById('show-answer-status').textContent = 'Generating answer…';
+  document.getElementById('copy-answer-btn').textContent = 'Copy to Clipboard';
+
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  await waitForICE(pc);
+
+  const answerPayload = JSON.stringify({
+    answer: pc.localDescription,
+    device_id: identity.device_id,
+    username: identity.username
+  });
+  document.getElementById('answer-code-textarea').value = compressPayload(answerPayload);
+  document.getElementById('show-answer-status').textContent = 'Waiting for host to connect…';
+}
+
+async function copyAnswerCode() {
+  const code = document.getElementById('answer-code-textarea').value;
+  if (!code || code === 'Generating…') return;
+  const btn = document.getElementById('copy-answer-btn');
+  try {
+    await navigator.clipboard.writeText(code);
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy to Clipboard'; }, 2000);
+  } catch(e) {
+    // Fallback: select so user can copy manually
+    document.getElementById('answer-code-textarea').select();
+    btn.textContent = 'Select All & Copy';
+  }
+}
+
+async function applyPastedAnswer() {
+  const raw = document.getElementById('paste-answer-textarea').value.trim();
+  const errEl = document.getElementById('paste-error');
+  errEl.classList.remove('visible');
+
+  if (!raw) {
+    errEl.textContent = 'Please paste the answer code first.';
+    errEl.classList.add('visible');
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(decompressPayload(raw));
+    if (!parsed.answer) throw new Error('no answer field');
+  } catch(e) {
+    errEl.textContent = 'Invalid answer code. Please check and try again.';
+    errEl.classList.add('visible');
+    return;
+  }
+
+  peerName = parsed.username || 'Peer';
+  try {
+    await pc.setRemoteDescription(new RTCSessionDescription(parsed.answer));
+  } catch(e) {
+    errEl.textContent = 'Connection failed: ' + e.message;
+    errEl.classList.add('visible');
   }
 }
 
