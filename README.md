@@ -4,40 +4,62 @@ A single-file, serverless, peer-to-peer chat and file transfer app that works en
 
 ## How It Works
 
-Connection is bootstrapped via a two-step QR code handshake:
+WebRTC DataChannels carry all traffic directly between devices (DTLS-encrypted).
+A lightweight signaling server (`server.py`) exchanges the WebRTC offer/answer so
+no QR code scanning is required — just open the URL on each device.
 
-1. **Host** opens `chat.html` → taps **Create Session** → a QR code appears
-2. **Joiner** opens `chat.html` → taps **Join Session** → scans the host QR → an answer QR appears
-3. **Host** taps **Scan Answer QR** → scans the joiner's QR → connection established
-4. Both sides can now chat and send files
+1. Run `python3 server.py` — it prints a LAN URL
+2. Open that URL on both devices
+3. Connection is established automatically via the signaling server
+4. Both sides can now chat and send files; the server is no longer involved
 
-WebRTC DataChannels carry all traffic directly between devices (DTLS-encrypted). No data ever leaves the local network.
+> **QR fallback**: The app also supports a manual two-step QR handshake if you
+> prefer to run without the server (open `chat.html` directly in a browser).
 
 ## Features
 
 - **Text chat** — real-time messaging both ways
 - **File transfer** — send any file; receiver gets a download link on completion
 - **Persistent identity** — username and device ID stored in `localStorage`, survives reloads
-- **No server, no build step** — open `chat.html` directly in a browser
+- **Auto-connect via signaling server** — `server.py` brokers the WebRTC handshake; no QR scanning needed
+- **QR fallback** — works without the server by scanning QR codes between devices
+- **No build step** — single Python file server, single HTML file client
 
 ## Usage
 
-### Option A — Open directly
+### Option A — Signaling server (recommended)
+```bash
+python3 server.py
+# → Open on both devices: http://192.168.x.x:8080/chat.html
+```
+Open the printed URL on each device — connection is automatic.
+
+### Option B — Open directly (QR handshake)
 ```
 file:///path/to/chat.html
 ```
-> Note: camera access (`getUserMedia`) requires either `localhost` or HTTPS in most browsers.
+> Camera access (`getUserMedia`) requires `localhost` or HTTPS in most browsers.
 
-### Option B — Serve over local network (recommended for phones)
+### WSL2 / cross-device on the same PC
+WSL2 uses a private IP not reachable from the LAN. Two options:
+
+**localtunnel** (easiest):
 ```bash
-# Python 3
-python3 -m http.server 8080
+# Terminal 1
+python3 server.py
 
-# Then open on each phone:
-# http://<your-computer-ip>:8080/chat.html
+# Terminal 2
+npx localtunnel --port 8080
+# → your url is: https://xxxx.loca.lt
 ```
+Open `https://xxxx.loca.lt/chat.html` on both devices.
+The tunnel only carries the tiny signaling payloads; WebRTC traffic stays peer-to-peer.
 
-Or use any static file server (Node's `serve`, `caddy`, nginx, etc.).
+**netsh portproxy** (no internet required — Admin PowerShell):
+```powershell
+netsh interface portproxy add v4tov4 listenport=8080 listenaddress=0.0.0.0 connectport=8080 connectaddress=$(wsl hostname -I)
+```
+Then use `http://<Windows-IP>:8080/chat.html`.
 
 ## Dependencies (loaded from CDN)
 
@@ -71,6 +93,7 @@ Any modern browser with WebRTC and `getUserMedia` support:
 ## Project Structure
 
 ```
-chat.html    # Everything — HTML, CSS, JS in one file
+chat.html    # Frontend — HTML, CSS, JS in one file
+server.py    # Signaling server + static file server (stdlib only, no deps)
 README.md
 ```

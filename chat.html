@@ -521,6 +521,15 @@
     height: 1px;
     background: #2a2a2a;
   }
+
+  /* ---- Waiting (server mode) ---- */
+  #section-waiting {
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 32px 24px;
+    text-align: center;
+  }
 </style>
 </head>
 <body>
@@ -547,6 +556,10 @@
   <button class="btn btn-primary" onclick="startHost()">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
     Create Session
+  </button>
+  <button class="btn btn-primary" id="btn-join-server" style="display:none" onclick="startJoinerAuto()">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+    Join Session
   </button>
   <button class="btn btn-secondary" onclick="startJoiner()">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
@@ -617,6 +630,14 @@
   <button class="btn btn-secondary btn-sm" onclick="goLanding()">Cancel</button>
 </div>
 
+<!-- WAITING (server mode) -->
+<div id="section-waiting" class="section">
+  <div class="qr-title" id="waiting-title">Connecting…</div>
+  <div class="spinner"></div>
+  <p class="qr-subtitle" id="waiting-status">Please wait…</p>
+  <button class="btn btn-secondary btn-sm" onclick="goLanding()">Cancel</button>
+</div>
+
 <!-- CHAT -->
 <div id="section-chat" class="section">
   <div class="chat-header">
@@ -645,6 +666,12 @@
 </div>
 
 <script>
+// ============================================================
+// SERVER MODE
+// ============================================================
+const SERVER_MODE = location.protocol !== 'file:';
+const SIGNAL_BASE = SERVER_MODE ? location.origin : null;
+
 // ============================================================
 // IDENTITY
 // ============================================================
@@ -749,6 +776,7 @@ function cleanup() {
 // HOST FLOW
 // ============================================================
 async function startHost() {
+  if (SERVER_MODE) { startHostAuto(); return; }
   showSection('section-host-qr');
   document.getElementById('host-status-text').textContent = 'Generating offer…';
   document.getElementById('btn-scan-answer').style.display = 'none';
@@ -1390,9 +1418,163 @@ function escHtml(str) {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ============================================================
+// SERVER MODE SIGNALING
+// ============================================================
+
+// Resolves with the first signal matching filterFn, or rejects on timeout/cancel.
+async function pollSignal(filterFn, intervalMs, timeoutMs) {
+  intervalMs = intervalMs || 2000;
+  timeoutMs  = timeoutMs  || 60000;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (currentSection !== 'section-waiting') throw new Error('Cancelled');
+    try {
+      const res = await fetch(SIGNAL_BASE + '/api/signal?exclude=' + identity.device_id);
+      if (res.ok) {
+        const signals = await res.json();
+        const match = signals.find(filterFn);
+        if (match) return match;
+      }
+    } catch(e) { /* network blip — keep polling */ }
+    await sleep(intervalMs);
+  }
+  throw new Error('Timed out waiting for peer');
+}
+
+async function startHostAuto() {
+  showSection('section-waiting');
+  document.getElementById('waiting-title').textContent = 'Create Session';
+  document.getElementById('waiting-status').textContent = 'Generating offer…';
+
+  createPeerConnection();
+  dc = pc.createDataChannel('chat', { ordered: true });
+  setupDataChannel();
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  await waitForICE(pc);
+
+  const payload = {
+    type: 'offer',
+    from: identity.device_id,
+    to: null,
+    data: compressPayload(JSON.stringify({
+      offer: pc.localDescription,
+      device_id: identity.device_id,
+      username: identity.username
+    }))
+  };
+
+  let signalId;
+  try {
+    const res = await fetch(SIGNAL_BASE + '/api/signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    signalId = json.id;
+  } catch(e) {
+    if (currentSection === 'section-waiting') { alert('Server unreachable: ' + e.message); goLanding(); }
+    return;
+  }
+
+  document.getElementById('waiting-status').textContent = 'Waiting for peer to join…';
+
+  let answerSig;
+  try {
+    answerSig = await pollSignal(function(s) { return s.type === 'answer' && s.to === identity.device_id; });
+  } catch(e) {
+    if (currentSection === 'section-waiting') { alert(e.message); goLanding(); }
+    if (signalId) fetch(SIGNAL_BASE + '/api/signal/' + signalId, { method: 'DELETE' }).catch(function(){});
+    return;
+  }
+
+  // Consume our own offer
+  if (signalId) fetch(SIGNAL_BASE + '/api/signal/' + signalId, { method: 'DELETE' }).catch(function(){});
+
+  let parsed;
+  try {
+    parsed = JSON.parse(decompressPayload(answerSig.data));
+    peerName = parsed.username || 'Peer';
+    await pc.setRemoteDescription(new RTCSessionDescription(parsed.answer));
+  } catch(e) {
+    alert('Connection failed: ' + e.message);
+    goLanding();
+    return;
+  }
+
+  // Consume the answer signal
+  fetch(SIGNAL_BASE + '/api/signal/' + answerSig.id, { method: 'DELETE' }).catch(function(){});
+}
+
+async function startJoinerAuto() {
+  showSection('section-waiting');
+  document.getElementById('waiting-title').textContent = 'Join Session';
+  document.getElementById('waiting-status').textContent = 'Looking for host…';
+
+  let offerSig;
+  try {
+    offerSig = await pollSignal(function(s) { return s.type === 'offer'; });
+  } catch(e) {
+    if (currentSection === 'section-waiting') { alert(e.message); goLanding(); }
+    return;
+  }
+
+  document.getElementById('waiting-status').textContent = 'Found host, connecting…';
+
+  let parsed;
+  try {
+    parsed = JSON.parse(decompressPayload(offerSig.data));
+  } catch(e) {
+    alert('Invalid offer from server.');
+    goLanding();
+    return;
+  }
+
+  peerName = parsed.username || 'Host';
+  createPeerConnection();
+  pc.ondatachannel = function(e) { dc = e.channel; setupDataChannel(); };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(parsed.offer));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  await waitForICE(pc);
+
+  const answerPayload = {
+    type: 'answer',
+    from: identity.device_id,
+    to: offerSig.from,
+    data: compressPayload(JSON.stringify({
+      answer: pc.localDescription,
+      device_id: identity.device_id,
+      username: identity.username
+    }))
+  };
+
+  try {
+    await fetch(SIGNAL_BASE + '/api/signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(answerPayload)
+    });
+  } catch(e) {
+    alert('Failed to post answer to server: ' + e.message);
+    goLanding();
+    return;
+  }
+
+  // Consume the offer signal
+  fetch(SIGNAL_BASE + '/api/signal/' + offerSig.id, { method: 'DELETE' }).catch(function(){});
+}
+
+// ============================================================
 // BOOT
 // ============================================================
 (function init() {
+  if (SERVER_MODE) {
+    document.getElementById('btn-join-server').style.display = 'flex';
+  }
   if (!identity.username) {
     document.getElementById('username-modal').classList.add('active');
     setTimeout(() => document.getElementById('username-input').focus(), 100);
