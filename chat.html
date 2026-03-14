@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>P2P Chat</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f0f0f;
+    color: #e8e8e8;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .section { display: none; flex-direction: column; height: 100dvh; }
+  .section.active { display: flex; }
+
+  /* ---- Landing ---- */
+  #section-landing {
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 32px 24px;
+    text-align: center;
+  }
+
+  #section-landing h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+
+  #section-landing .subtitle {
+    color: #888;
+    font-size: 0.9rem;
+  }
+
+  .identity-card {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 16px 24px;
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .identity-card .label { color: #666; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+  .identity-card .name { font-size: 1.1rem; font-weight: 600; margin-top: 4px; }
+  .identity-card .device-id { font-size: 0.7rem; color: #555; margin-top: 2px; font-family: monospace; }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 320px;
+    padding: 14px 24px;
+    border: none;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .btn:active { transform: scale(0.97); opacity: 0.85; }
+
+  .btn-primary { background: #4f8ef7; color: #fff; }
+  .btn-secondary { background: #2a2a2a; color: #e8e8e8; border: 1px solid #3a3a3a; }
+  .btn-danger { background: #c0392b; color: #fff; }
+  .btn-sm {
+    padding: 10px 16px;
+    font-size: 0.875rem;
+    border-radius: 8px;
+    max-width: none;
+    width: auto;
+  }
+
+  .change-name-link {
+    color: #4f8ef7;
+    font-size: 0.8rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+  }
+
+  /* ---- Host QR / Answer QR ---- */
+  #section-host-qr, #section-answer-qr {
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 32px 24px;
+    text-align: center;
+  }
+
+  .qr-title { font-size: 1.2rem; font-weight: 700; }
+  .qr-subtitle { color: #888; font-size: 0.85rem; max-width: 280px; line-height: 1.4; }
+
+  #qr-offer-container, #qr-answer-container {
+    background: #fff;
+    padding: 16px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 240px;
+    min-height: 240px;
+  }
+
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid #2a2a2a;
+    border-top-color: #4f8ef7;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- Camera ---- */
+  #section-camera {
+    position: relative;
+    background: #000;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #camera-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  #camera-canvas { display: none; }
+
+  .camera-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  .scan-frame {
+    width: 220px;
+    height: 220px;
+    border: 2px solid rgba(79, 142, 247, 0.8);
+    border-radius: 16px;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.4);
+  }
+
+  .camera-hint {
+    position: absolute;
+    bottom: 80px;
+    color: #fff;
+    font-size: 0.9rem;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    pointer-events: none;
+  }
+
+  .camera-cancel {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    pointer-events: all;
+  }
+
+  /* ---- Chat ---- */
+  #section-chat {
+    flex-direction: column;
+  }
+
+  .chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0;
+  }
+
+  .chat-header-info { display: flex; flex-direction: column; gap: 2px; }
+  .chat-header-name { font-weight: 700; font-size: 1rem; }
+  .chat-status {
+    font-size: 0.75rem;
+    color: #4caf50;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .chat-status::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: #4caf50;
+    border-radius: 50%;
+  }
+
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .msg {
+    max-width: 80%;
+    padding: 10px 14px;
+    border-radius: 16px;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .msg-out {
+    align-self: flex-end;
+    background: #4f8ef7;
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+
+  .msg-in {
+    align-self: flex-start;
+    background: #2a2a2a;
+    color: #e8e8e8;
+    border-bottom-left-radius: 4px;
+  }
+
+  .msg-sender {
+    font-size: 0.7rem;
+    opacity: 0.65;
+    margin-bottom: 3px;
+  }
+
+  .msg-file {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #2a2a2a;
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+  }
+
+  .msg-file.out {
+    background: #3a6bc7;
+    align-self: flex-end;
+    border-bottom-right-radius: 4px;
+    border-bottom-left-radius: 16px;
+  }
+
+  .file-icon { font-size: 1.5rem; }
+
+  .file-info { display: flex; flex-direction: column; gap: 2px; }
+  .file-name { font-size: 0.85rem; font-weight: 600; }
+  .file-size { font-size: 0.7rem; opacity: 0.65; }
+
+  .progress-bar-wrap {
+    height: 4px;
+    background: #1a1a1a;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 6px;
+    width: 100%;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: #4f8ef7;
+    border-radius: 2px;
+    transition: width 0.2s;
+    width: 0%;
+  }
+
+  .chat-footer {
+    flex-shrink: 0;
+    background: #1a1a1a;
+    border-top: 1px solid #2a2a2a;
+    padding: 10px 12px;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  #chat-input {
+    flex: 1;
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 20px;
+    color: #e8e8e8;
+    font-size: 0.95rem;
+    padding: 10px 16px;
+    resize: none;
+    max-height: 120px;
+    outline: none;
+    line-height: 1.4;
+    font-family: inherit;
+  }
+
+  #chat-input::placeholder { color: #555; }
+
+  .icon-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    transition: color 0.15s, background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
+  }
+
+  .icon-btn:hover { color: #4f8ef7; background: #2a2a2a; }
+
+  #file-input { display: none; }
+
+  .send-btn {
+    background: #4f8ef7;
+    border: none;
+    color: #fff;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: opacity 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .send-btn:active { opacity: 0.8; }
+
+  /* Transfer progress overlay */
+  #transfer-status {
+    background: #1a1a1a;
+    border-top: 1px solid #2a2a2a;
+    padding: 8px 16px;
+    font-size: 0.8rem;
+    color: #888;
+    display: none;
+    align-items: center;
+    gap: 10px;
+  }
+
+  #transfer-status.active { display: flex; }
+  #transfer-progress-bar { flex: 1; height: 4px; background: #2a2a2a; border-radius: 2px; overflow: hidden; }
+  #transfer-progress-fill { height: 100%; background: #4f8ef7; border-radius: 2px; width: 0%; transition: width 0.1s; }
+
+  /* Modal/dialog for username */
+  #username-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 999;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  #username-modal.active { display: flex; }
+
+  .modal-box {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 16px;
+    padding: 28px 24px;
+    width: 100%;
+    max-width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    text-align: center;
+  }
+
+  .modal-box h2 { font-size: 1.2rem; }
+  .modal-box p { color: #888; font-size: 0.85rem; }
+
+  .text-input {
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    color: #e8e8e8;
+    font-size: 1rem;
+    padding: 12px 16px;
+    outline: none;
+    width: 100%;
+  }
+
+  .text-input:focus { border-color: #4f8ef7; }
+
+  /* System messages */
+  .msg-system {
+    text-align: center;
+    color: #555;
+    font-size: 0.75rem;
+    padding: 4px 0;
+    align-self: center;
+  }
+
+  /* Download link in file messages */
+  .download-link {
+    color: #4f8ef7;
+    font-size: 0.75rem;
+    text-decoration: none;
+  }
+</style>
+</head>
+<body>
+
+<!-- Username Modal -->
+<div id="username-modal">
+  <div class="modal-box">
+    <h2>Welcome</h2>
+    <p>Enter a display name for this device</p>
+    <input type="text" id="username-input" class="text-input" placeholder="Your name" maxlength="32" autocomplete="off">
+    <button class="btn btn-primary" onclick="saveUsername()">Continue</button>
+  </div>
+</div>
+
+<!-- LANDING -->
+<div id="section-landing" class="section">
+  <h1>P2P Chat</h1>
+  <p class="subtitle">Direct device-to-device over Wi-Fi<br>No server. No internet required.</p>
+  <div class="identity-card">
+    <div class="label">Your identity</div>
+    <div class="name" id="landing-username"></div>
+    <div class="device-id" id="landing-device-id"></div>
+  </div>
+  <button class="btn btn-primary" onclick="startHost()">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    Create Session
+  </button>
+  <button class="btn btn-secondary" onclick="startJoiner()">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+    Join Session
+  </button>
+  <button class="change-name-link" onclick="changeName()">Change display name</button>
+</div>
+
+<!-- HOST QR (offer) -->
+<div id="section-host-qr" class="section">
+  <div class="qr-title">Share this QR</div>
+  <p class="qr-subtitle">Have the other device scan this code to join your session</p>
+  <div id="qr-offer-container"><div class="spinner"></div></div>
+  <button class="btn btn-primary" id="btn-scan-answer" onclick="openCameraForAnswer()" style="display:none">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+    Scan Answer QR
+  </button>
+  <p class="qr-subtitle" id="host-status-text">Generating offer…</p>
+  <button class="btn btn-secondary btn-sm" onclick="goLanding()">Cancel</button>
+</div>
+
+<!-- CAMERA VIEW -->
+<div id="section-camera" class="section">
+  <video id="camera-video" autoplay playsinline muted></video>
+  <canvas id="camera-canvas"></canvas>
+  <div class="camera-overlay">
+    <div class="scan-frame"></div>
+  </div>
+  <div class="camera-hint" id="camera-hint">Align QR code within the frame</div>
+  <button class="btn btn-secondary btn-sm camera-cancel" onclick="cancelCamera()">Cancel</button>
+</div>
+
+<!-- ANSWER QR (joiner shows this) -->
+<div id="section-answer-qr" class="section">
+  <div class="qr-title">Your Answer QR</div>
+  <p class="qr-subtitle">Have the host scan this code to complete the connection</p>
+  <div id="qr-answer-container"><div class="spinner"></div></div>
+  <p class="qr-subtitle" id="answer-status-text">Generating answer…</p>
+  <button class="btn btn-secondary btn-sm" onclick="goLanding()">Cancel</button>
+</div>
+
+<!-- CHAT -->
+<div id="section-chat" class="section">
+  <div class="chat-header">
+    <div class="chat-header-info">
+      <div class="chat-header-name" id="chat-peer-name">Peer</div>
+      <div class="chat-status">Connected</div>
+    </div>
+    <button class="btn btn-danger btn-sm" onclick="disconnect()">Disconnect</button>
+  </div>
+  <div class="chat-messages" id="chat-messages"></div>
+  <div id="transfer-status">
+    <span id="transfer-label">Sending…</span>
+    <div id="transfer-progress-bar"><div id="transfer-progress-fill"></div></div>
+    <span id="transfer-pct">0%</span>
+  </div>
+  <div class="chat-footer">
+    <button class="icon-btn" onclick="document.getElementById('file-input').click()" title="Send file">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+    </button>
+    <input type="file" id="file-input" onchange="sendFile(this.files[0])">
+    <textarea id="chat-input" rows="1" placeholder="Message…" onkeydown="inputKeydown(event)" oninput="autoResize(this)"></textarea>
+    <button class="send-btn" onclick="sendMessage()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// IDENTITY
+// ============================================================
+const CHUNK_SIZE = 32 * 1024; // 32 KB
+
+function generateUUID() {
+  return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+    (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+}
+
+let identity = {
+  device_id: localStorage.getItem('p2p_device_id'),
+  username: localStorage.getItem('p2p_username')
+};
+
+if (!identity.device_id) {
+  identity.device_id = generateUUID();
+  localStorage.setItem('p2p_device_id', identity.device_id);
+}
+
+function saveUsername() {
+  const val = document.getElementById('username-input').value.trim();
+  if (!val) return;
+  identity.username = val;
+  localStorage.setItem('p2p_username', val);
+  document.getElementById('username-modal').classList.remove('active');
+  initLanding();
+}
+
+function changeName() {
+  document.getElementById('username-input').value = identity.username || '';
+  document.getElementById('username-modal').classList.add('active');
+  setTimeout(() => document.getElementById('username-input').focus(), 100);
+}
+
+// Enter key in username input
+document.getElementById('username-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveUsername();
+});
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+let currentSection = '';
+
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  currentSection = id;
+}
+
+function initLanding() {
+  document.getElementById('landing-username').textContent = identity.username;
+  document.getElementById('landing-device-id').textContent = identity.device_id.slice(0, 18) + '…';
+  showSection('section-landing');
+}
+
+function goLanding() {
+  cleanup();
+  initLanding();
+}
+
+// ============================================================
+// WEBRTC STATE
+// ============================================================
+let pc = null;
+let dc = null;
+let cameraStream = null;
+let scanInterval = null;
+let scanMode = null; // 'joiner-scan-offer' | 'host-scan-answer'
+let peerName = 'Peer';
+
+// In-flight file receive buffers: { [id]: { name, size, totalChunks, chunks: [], received: 0 } }
+const fileReceiveBuffers = {};
+
+// Pending outgoing transfer
+let outgoingTransfer = null;
+
+function createPeerConnection() {
+  pc = new RTCPeerConnection({
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  });
+
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+      if (currentSection === 'section-chat') {
+        addSystemMsg('Connection lost');
+      }
+    }
+  };
+}
+
+function cleanup() {
+  stopCamera();
+  if (dc) { try { dc.close(); } catch(e){} dc = null; }
+  if (pc) { try { pc.close(); } catch(e){} pc = null; }
+  outgoingTransfer = null;
+  Object.keys(fileReceiveBuffers).forEach(k => delete fileReceiveBuffers[k]);
+}
+
+// ============================================================
+// HOST FLOW
+// ============================================================
+async function startHost() {
+  showSection('section-host-qr');
+  document.getElementById('host-status-text').textContent = 'Generating offer…';
+  document.getElementById('btn-scan-answer').style.display = 'none';
+  document.getElementById('qr-offer-container').innerHTML = '<div class="spinner"></div>';
+
+  createPeerConnection();
+
+  // Create data channel as host
+  dc = pc.createDataChannel('chat', { ordered: true });
+  setupDataChannel();
+
+  // Create offer
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  // Wait for ICE gathering
+  await waitForICE(pc);
+
+  const payload = JSON.stringify({
+    offer: pc.localDescription,
+    device_id: identity.device_id,
+    username: identity.username
+  });
+
+  const compressed = compressPayload(payload);
+  renderQR('qr-offer-container', compressed);
+  document.getElementById('host-status-text').textContent = 'Waiting for peer to scan…';
+  document.getElementById('btn-scan-answer').style.display = 'flex';
+}
+
+function openCameraForAnswer() {
+  scanMode = 'host-scan-answer';
+  openCamera();
+}
+
+// ============================================================
+// JOINER FLOW
+// ============================================================
+function startJoiner() {
+  scanMode = 'joiner-scan-offer';
+  openCamera();
+}
+
+async function handleScannedOffer(data) {
+  let parsed;
+  try {
+    parsed = JSON.parse(decompressPayload(data));
+  } catch(e) {
+    alert('Invalid QR code. Please scan the correct session QR.');
+    return;
+  }
+
+  stopCamera();
+  showSection('section-answer-qr');
+  document.getElementById('answer-status-text').textContent = 'Generating answer…';
+  document.getElementById('qr-answer-container').innerHTML = '<div class="spinner"></div>';
+
+  peerName = parsed.username || 'Host';
+
+  createPeerConnection();
+
+  pc.ondatachannel = (e) => {
+    dc = e.channel;
+    setupDataChannel();
+  };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(parsed.offer));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+
+  await waitForICE(pc);
+
+  const payload = JSON.stringify({
+    answer: pc.localDescription,
+    device_id: identity.device_id,
+    username: identity.username
+  });
+
+  const compressed = compressPayload(payload);
+  renderQR('qr-answer-container', compressed);
+  document.getElementById('answer-status-text').textContent = 'Have the host scan this QR';
+}
+
+async function handleScannedAnswer(data) {
+  let parsed;
+  try {
+    parsed = JSON.parse(decompressPayload(data));
+  } catch(e) {
+    alert('Invalid QR code. Please scan the correct answer QR.');
+    return;
+  }
+
+  peerName = parsed.username || 'Peer';
+  stopCamera();
+
+  try {
+    await pc.setRemoteDescription(new RTCSessionDescription(parsed.answer));
+  } catch(e) {
+    alert('Failed to set remote description: ' + e.message);
+    goLanding();
+  }
+}
+
+// ============================================================
+// DATA CHANNEL
+// ============================================================
+function setupDataChannel() {
+  dc.binaryType = 'arraybuffer';
+
+  dc.onopen = () => {
+    showSection('section-chat');
+    document.getElementById('chat-peer-name').textContent = peerName;
+    document.getElementById('chat-messages').innerHTML = '';
+    addSystemMsg('Connected to ' + peerName);
+  };
+
+  dc.onclose = () => {
+    if (currentSection === 'section-chat') {
+      addSystemMsg('Disconnected');
+    }
+  };
+
+  dc.onerror = (e) => {
+    console.error('DataChannel error', e);
+  };
+
+  dc.onmessage = (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+    handleIncoming(msg);
+  };
+}
+
+function handleIncoming(msg) {
+  if (msg.type === 'chat') {
+    addChatMsg(msg.text, false, peerName);
+  } else if (msg.type === 'file-meta') {
+    fileReceiveBuffers[msg.id] = {
+      name: msg.name,
+      size: msg.size,
+      totalChunks: msg.totalChunks,
+      chunks: new Array(msg.totalChunks),
+      received: 0,
+      msgEl: addFileMsg(msg.name, msg.size, false, msg.id)
+    };
+  } else if (msg.type === 'file-chunk') {
+    const buf = fileReceiveBuffers[msg.id];
+    if (!buf) return;
+    buf.chunks[msg.index] = msg.data;
+    buf.received++;
+    updateFileProgress(msg.id, buf.received / buf.totalChunks);
+  } else if (msg.type === 'file-done') {
+    const buf = fileReceiveBuffers[msg.id];
+    if (!buf) return;
+    finalizeFileReceive(msg.id, buf);
+  }
+}
+
+// ============================================================
+// MESSAGING
+// ============================================================
+function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text || !dc || dc.readyState !== 'open') return;
+  dc.send(JSON.stringify({ type: 'chat', text }));
+  addChatMsg(text, true, 'You');
+  input.value = '';
+  input.style.height = 'auto';
+}
+
+function inputKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+// ============================================================
+// FILE TRANSFER (outgoing)
+// ============================================================
+async function sendFile(file) {
+  if (!file || !dc || dc.readyState !== 'open') return;
+
+  const id = generateUUID();
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+  // Send meta
+  dc.send(JSON.stringify({
+    type: 'file-meta',
+    id, name: file.name, size: file.size, totalChunks
+  }));
+
+  addFileMsg(file.name, file.size, true, id);
+  showTransferStatus(true, file.name);
+
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+
+  for (let i = 0; i < totalChunks; i++) {
+    // Back-pressure: wait if buffer is full
+    while (dc.bufferedAmount > 512 * 1024) {
+      await sleep(50);
+    }
+
+    const start = i * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, bytes.length);
+    const chunk = bytes.slice(start, end);
+    const b64 = uint8ToBase64(chunk);
+
+    dc.send(JSON.stringify({ type: 'file-chunk', id, index: i, data: b64 }));
+
+    const pct = (i + 1) / totalChunks;
+    updateSendProgress(pct);
+  }
+
+  dc.send(JSON.stringify({ type: 'file-done', id }));
+  showTransferStatus(false);
+
+  // reset file input
+  document.getElementById('file-input').value = '';
+}
+
+// ============================================================
+// FILE TRANSFER (incoming)
+// ============================================================
+function finalizeFileReceive(id, buf) {
+  // Decode each base64 chunk and merge
+  const totalBytes = buf.size;
+  const out = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (let i = 0; i < buf.totalChunks; i++) {
+    const chunk = base64ToUint8(buf.chunks[i]);
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  const blob = new Blob([out]);
+  const url = URL.createObjectURL(blob);
+
+  // Update the message element with a download link
+  const msgEl = buf.msgEl;
+  if (msgEl) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = buf.name;
+    link.textContent = 'Download';
+    link.className = 'download-link';
+    msgEl.appendChild(link);
+
+    const bar = msgEl.querySelector('.progress-bar');
+    if (bar) bar.style.width = '100%';
+  }
+
+  delete fileReceiveBuffers[id];
+}
+
+// ============================================================
+// UI HELPERS
+// ============================================================
+function addChatMsg(text, outgoing, sender) {
+  const msgs = document.getElementById('chat-messages');
+  const el = document.createElement('div');
+  el.className = 'msg ' + (outgoing ? 'msg-out' : 'msg-in');
+
+  if (!outgoing) {
+    const senderEl = document.createElement('div');
+    senderEl.className = 'msg-sender';
+    senderEl.textContent = sender;
+    el.appendChild(senderEl);
+  }
+
+  const textEl = document.createElement('div');
+  textEl.textContent = text;
+  el.appendChild(textEl);
+
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addSystemMsg(text) {
+  const msgs = document.getElementById('chat-messages');
+  const el = document.createElement('div');
+  el.className = 'msg-system';
+  el.textContent = text;
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addFileMsg(name, size, outgoing, id) {
+  const msgs = document.getElementById('chat-messages');
+  const el = document.createElement('div');
+  el.className = 'msg msg-file' + (outgoing ? ' out' : '');
+  el.id = 'file-msg-' + id;
+
+  const sizeStr = formatBytes(size);
+
+  el.innerHTML = `
+    <div class="file-icon">📎</div>
+    <div class="file-info">
+      <div class="file-name">${escHtml(name)}</div>
+      <div class="file-size">${sizeStr}</div>
+      <div class="progress-bar-wrap"><div class="progress-bar" style="width:0%"></div></div>
+    </div>
+  `;
+
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+  return el;
+}
+
+function updateFileProgress(id, fraction) {
+  const el = document.getElementById('file-msg-' + id);
+  if (!el) return;
+  const bar = el.querySelector('.progress-bar');
+  if (bar) bar.style.width = (fraction * 100).toFixed(1) + '%';
+}
+
+function showTransferStatus(active, label) {
+  const el = document.getElementById('transfer-status');
+  if (active) {
+    el.classList.add('active');
+    document.getElementById('transfer-label').textContent = 'Sending ' + (label || '');
+    document.getElementById('transfer-progress-fill').style.width = '0%';
+    document.getElementById('transfer-pct').textContent = '0%';
+  } else {
+    el.classList.remove('active');
+  }
+}
+
+function updateSendProgress(fraction) {
+  const pct = (fraction * 100).toFixed(0) + '%';
+  document.getElementById('transfer-progress-fill').style.width = pct;
+  document.getElementById('transfer-pct').textContent = pct;
+
+  // Also update the file msg progress bar for the outgoing file
+  // (we only have one outgoing at a time; get last .msg-file.out)
+  const bars = document.querySelectorAll('.msg-file.out .progress-bar');
+  if (bars.length) bars[bars.length - 1].style.width = pct;
+}
+
+function disconnect() {
+  if (!confirm('Disconnect from ' + peerName + '?')) return;
+  cleanup();
+  goLanding();
+}
+
+// ============================================================
+// CAMERA / QR SCANNING
+// ============================================================
+async function openCamera() {
+  showSection('section-camera');
+  document.getElementById('camera-hint').textContent = 'Align QR code within the frame';
+
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+  } catch(e) {
+    alert('Camera access denied or unavailable: ' + e.message);
+    if (scanMode === 'joiner-scan-offer') goLanding();
+    else showSection('section-host-qr');
+    return;
+  }
+
+  const video = document.getElementById('camera-video');
+  video.srcObject = cameraStream;
+  await video.play().catch(() => {});
+
+  startScanning();
+}
+
+function stopCamera() {
+  clearInterval(scanInterval);
+  scanInterval = null;
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  const video = document.getElementById('camera-video');
+  video.srcObject = null;
+}
+
+function cancelCamera() {
+  stopCamera();
+  if (scanMode === 'joiner-scan-offer') {
+    goLanding();
+  } else {
+    showSection('section-host-qr');
+  }
+}
+
+function startScanning() {
+  const video = document.getElementById('camera-video');
+  const canvas = document.getElementById('camera-canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  scanInterval = setInterval(() => {
+    if (video.readyState < 2) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: 'dontInvert'
+    });
+
+    if (code && code.data) {
+      clearInterval(scanInterval);
+      scanInterval = null;
+      onQRScanned(code.data);
+    }
+  }, 200);
+}
+
+function onQRScanned(data) {
+  if (scanMode === 'joiner-scan-offer') {
+    handleScannedOffer(data);
+  } else if (scanMode === 'host-scan-answer') {
+    stopCamera();
+    showSection('section-host-qr');
+    document.getElementById('host-status-text').textContent = 'Connecting…';
+    handleScannedAnswer(data);
+  }
+}
+
+// ============================================================
+// QR RENDERING
+// ============================================================
+function renderQR(containerId, data) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  new QRCode(container, {
+    text: data,
+    width: 220,
+    height: 220,
+    colorDark: '#000000',
+    colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.L
+  });
+}
+
+// ============================================================
+// COMPRESSION HELPERS
+// ============================================================
+function compressPayload(str) {
+  const compressed = pako.deflate(str);
+  return 'Z:' + uint8ToBase64(compressed);
+}
+
+function decompressPayload(str) {
+  if (str.startsWith('Z:')) {
+    const b64 = str.slice(2);
+    const bytes = base64ToUint8(b64);
+    return pako.inflate(bytes, { to: 'string' });
+  }
+  // Fallback: plain base64 or raw JSON
+  try { return atob(str); } catch { return str; }
+}
+
+// ============================================================
+// ICE GATHERING
+// ============================================================
+function waitForICE(pc, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    if (pc.iceGatheringState === 'complete') { resolve(); return; }
+    const timer = setTimeout(() => { resolve(); }, timeoutMs);
+    pc.onicegatheringstatechange = () => {
+      if (pc.iceGatheringState === 'complete') {
+        clearTimeout(timer);
+        resolve();
+      }
+    };
+  });
+}
+
+// ============================================================
+// UTILITY
+// ============================================================
+function uint8ToBase64(uint8) {
+  let binary = '';
+  for (let i = 0; i < uint8.length; i++) binary += String.fromCharCode(uint8[i]);
+  return btoa(binary);
+}
+
+function base64ToUint8(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ============================================================
+// BOOT
+// ============================================================
+(function init() {
+  if (!identity.username) {
+    document.getElementById('username-modal').classList.add('active');
+    setTimeout(() => document.getElementById('username-input').focus(), 100);
+  } else {
+    initLanding();
+  }
+})();
+</script>
+</body>
+</html>
