@@ -10,26 +10,12 @@ and start chatting. Messages go directly from device to device and never touch a
 
 Two ways to connect:
 
-- **QR scan** — zero setup, but requires camera access (needs HTTPS or the server option below)
-- **Run the server** — one person runs a small Python script; the other just opens a URL
+- **Run the server** — easier and more reliable; one person runs a small Python script, the other opens a URL
+- **QR scan** — zero setup, no install, but requires camera access
 
 ---
 
-## Option A — QR scan
-
-Both people open `chat.html` in a browser.
-
-1. Person A taps **Invite** → a QR code appears on screen
-2. Person B taps **Join** → points their camera at Person A's screen
-3. Connected — start chatting
-
-> **Camera on mobile:** Browsers block camera access on plain `http://` addresses.
-> If you're opening `chat.html` directly from a file or over `http://`, the camera won't work.
-> Use Option B (the server) instead — it's easier on phones anyway.
-
----
-
-## Option B — Run the server (recommended for phones)
+## Option A — Run the server (recommended)
 
 One person runs the signaling server. The other just opens a URL — no QR, no camera needed.
 
@@ -40,13 +26,12 @@ python3 server.py
 # Prints something like: http://192.168.1.5:8080
 ```
 
-Both open that URL in their browser — connection is automatic.
+Share that URL with the other person — text it, show the screen, or scan a QR of it.
+Both open it in their browser and connection is automatic.
 
-### Running the server from a phone
+### Running from a phone (Android)
 
-No laptop? No problem. You can run the server directly from a phone.
-
-**Android — Termux**
+No laptop? No problem. Run the server directly from your phone.
 
 Install [Termux from F-Droid](https://f-droid.org/packages/com.termux/) (not Google Play — that version is abandoned).
 
@@ -57,44 +42,18 @@ cd lan-chat
 python3 server.py
 ```
 
-**iOS — iSH**
-
-Install [iSH from the App Store](https://ish.app).
-
-```bash
-apk add python3 git
-git clone https://github.com/amichw/lan-chat
-cd lan-chat
-python3 server.py
-```
-
-Both phones must be on the same hotspot. The server prints the URL to share.
-
 ---
 
-## WSL2 / running across devices from the same PC
+## Option B — QR scan (no server needed)
 
-WSL2 uses a private IP not reachable from the LAN. Two options:
+Both people open `chat.html` directly in a browser.
 
-**localtunnel** (easiest, needs internet for setup):
-```bash
-# Terminal 1
-python3 server.py
+1. Person A taps **Invite** → a QR code appears on screen
+2. Person B taps **Join** → points their camera at Person A's screen
+3. Connected — start chatting
 
-# Terminal 2
-npx localtunnel --port 8080
-# → your url is: https://xxxx.loca.lt
-```
-Open `https://xxxx.loca.lt/chat.html` on both devices.
-The tunnel only carries the tiny signaling payloads; all chat traffic stays peer-to-peer.
-
-**netsh portproxy** (no internet, Admin PowerShell):
-```powershell
-netsh interface portproxy add v4tov4 listenport=8080 listenaddress=0.0.0.0 connectport=8080 connectaddress=$(wsl hostname -I)
-```
-Then use `http://<Windows-IP>:8080/chat.html`.
-
-> When you're done, clean up with: `netsh interface portproxy reset`
+> **Camera note:** Browsers block camera access on plain `http://` addresses.
+> If the camera doesn't work, use Option A instead — it's easier on phones anyway.
 
 ---
 
