@@ -645,7 +645,10 @@
       <div class="chat-header-name" id="chat-peer-name">Peer</div>
       <div class="chat-status">Connected</div>
     </div>
-    <button class="btn btn-danger btn-sm" onclick="disconnect()">Disconnect</button>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn btn-sm" style="background:transparent;color:#888;font-size:0.75rem;padding:4px 8px;" onclick="clearPeerHistory()">Clear history</button>
+      <button class="btn btn-danger btn-sm" onclick="disconnect()">Disconnect</button>
+    </div>
   </div>
   <div class="chat-messages" id="chat-messages"></div>
   <div id="transfer-status">
@@ -705,6 +708,36 @@ function changeName() {
   document.getElementById('username-input').value = identity.username || '';
   document.getElementById('username-modal').classList.add('active');
   setTimeout(() => document.getElementById('username-input').focus(), 100);
+}
+
+function saveMessageToHistory(text, outgoing, sender) {
+  const MAX = 500;
+  let history;
+  try { history = JSON.parse(localStorage.getItem('p2p_chat_history') || '[]'); }
+  catch { history = []; }
+  history.push({ peer: peerName, text, outgoing, sender, ts: Date.now() });
+  if (history.length > MAX) history = history.slice(-MAX);
+  localStorage.setItem('p2p_chat_history', JSON.stringify(history));
+}
+
+function loadChatHistory() {
+  let history;
+  try { history = JSON.parse(localStorage.getItem('p2p_chat_history') || '[]'); }
+  catch { return; }
+  const msgs = history.filter(m => m.peer === peerName).slice(-100);
+  if (!msgs.length) return;
+  addSystemMsg('— previous messages —');
+  msgs.forEach(m => addChatMsg(m.text, m.outgoing, m.sender, true));
+}
+
+function clearPeerHistory() {
+  let history;
+  try { history = JSON.parse(localStorage.getItem('p2p_chat_history') || '[]'); }
+  catch { history = []; }
+  history = history.filter(m => m.peer !== peerName);
+  localStorage.setItem('p2p_chat_history', JSON.stringify(history));
+  document.getElementById('chat-messages').innerHTML = '';
+  addSystemMsg('History cleared.');
 }
 
 // Enter key in username input
@@ -898,6 +931,7 @@ function setupDataChannel() {
     showSection('section-chat');
     document.getElementById('chat-peer-name').textContent = peerName;
     document.getElementById('chat-messages').innerHTML = '';
+    loadChatHistory();
     addSystemMsg('Connected to ' + peerName);
   };
 
@@ -1050,7 +1084,7 @@ function finalizeFileReceive(id, buf) {
 // ============================================================
 // UI HELPERS
 // ============================================================
-function addChatMsg(text, outgoing, sender) {
+function addChatMsg(text, outgoing, sender, skipSave = false) {
   const msgs = document.getElementById('chat-messages');
   const el = document.createElement('div');
   el.className = 'msg ' + (outgoing ? 'msg-out' : 'msg-in');
@@ -1068,6 +1102,7 @@ function addChatMsg(text, outgoing, sender) {
 
   msgs.appendChild(el);
   msgs.scrollTop = msgs.scrollHeight;
+  if (!skipSave) saveMessageToHistory(text, outgoing, sender);
 }
 
 function addSystemMsg(text) {
